@@ -1,5 +1,7 @@
 # fynecef
 
+[![Go](https://github.com/Crushless/fyne_browser/actions/workflows/go.yml/badge.svg?branch=main)](https://github.com/Crushless/fyne_browser/actions/workflows/go.yml)
+
 `fynecef` is a Fyne v2 browser addon that embeds the Chromium Embedded Framework (CEF) inside a Fyne widget.
 
 It is designed to feel like a normal Fyne component:
