@@ -15,12 +15,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Go
+      - name: 🛠️ Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
 
-      - name: Install Linux build dependencies
+      - name: 🛠️ Install Linux build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -28,7 +28,7 @@ jobs:
             libxkbcommon-dev \
             xorg-dev
 
-      - name: Download CEF runtime
+      - name: 🛠️ Download CEF runtime
         run: |
           python3 <<'PY'
           import json
@@ -98,8 +98,8 @@ jobs:
           current_link.symlink_to(os.path.relpath(install_root, current_link.parent))
           PY
 
-      - name: Build
+      - name: ⚗️ Build
         run: go build -v ./...
 
-      - name: Test
+      - name: 🔬 Test
         run: go test -v ./...
