@@ -10,19 +10,96 @@ on:
     branches: [ "main" ]
 
 jobs:
-
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.20'
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
 
-    - name: Build
-      run: go build -v ./...
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1-mesa-dev \
+            libxkbcommon-dev \
+            xorg-dev
 
-    - name: Test
-      run: go test -v ./...
+      - name: Download CEF runtime
+        run: |
+          python3 <<'PY'
+          import json
+          import os
+          import pathlib
+          import shutil
+          import tarfile
+          import tempfile
+          import urllib.parse
+          import urllib.request
+
+          manifest_url = "https://cef-builds.spotifycdn.com/index.json"
+          platform = "linux64"
+          channel = "stable"
+          package_type = "minimal"
+
+          with urllib.request.urlopen(manifest_url) as response:
+              manifest = json.load(response)
+
+          selected_version = None
+          selected_file = None
+          for version in manifest[platform]["versions"]:
+              if version.get("channel") != channel:
+                  continue
+              for entry in version.get("files", []):
+                  if entry.get("type") == package_type:
+                      selected_version = version
+                      selected_file = entry
+                      break
+              if selected_file is not None:
+                  break
+
+          if selected_version is None or selected_file is None:
+              raise SystemExit("no matching CEF build found in manifest")
+
+          build_version = selected_version["cef_version"]
+          archive_name = selected_file["name"]
+          archive_url = urllib.parse.urljoin(manifest_url, archive_name)
+
+          builds_dir = pathlib.Path("third_party/cef/builds")
+          current_link = pathlib.Path("third_party/cef/current")
+          install_root = builds_dir / f"{platform}-{package_type}-{build_version}"
+          archive_path = builds_dir / archive_name
+
+          builds_dir.mkdir(parents=True, exist_ok=True)
+
+          if not install_root.exists():
+              urllib.request.urlretrieve(archive_url, archive_path)
+
+              with tempfile.TemporaryDirectory(dir=builds_dir) as tmpdir:
+                  with tarfile.open(archive_path, "r:bz2") as archive:
+                      archive.extractall(tmpdir)
+
+                  extracted = [path for path in pathlib.Path(tmpdir).iterdir() if path.is_dir()]
+                  if len(extracted) != 1:
+                      raise SystemExit("unexpected CEF archive layout")
+
+                  if install_root.exists():
+                      shutil.rmtree(install_root)
+                  shutil.move(str(extracted[0]), install_root)
+
+              archive_path.unlink()
+
+          current_link.parent.mkdir(parents=True, exist_ok=True)
+          if current_link.is_symlink() or current_link.exists():
+              current_link.unlink()
+          current_link.symlink_to(os.path.relpath(install_root, current_link.parent))
+          PY
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Test
+        run: go test -v ./...
