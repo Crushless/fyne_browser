@@ -233,11 +233,18 @@ The `fynecef` source code in this repository is licensed under the BSD 3-Clause 
 
 The CEF framework itself is not covered by this repository's `LICENSE` file.
 
-The downloaded CEF binary distribution in this workspace includes:
+Upstream licensing references:
 
-- [third_party/cef/current/LICENSE.txt](third_party/cef/current/LICENSE.txt): CEF license text
-- [third_party/cef/current/CREDITS.html](third_party/cef/current/CREDITS.html): Chromium and third-party license notices
-- [third_party/cef/current/README.txt](third_party/cef/current/README.txt): redistribution and licensing notes for the binary distribution
+- [CEF upstream LICENSE.txt](https://github.com/chromiumembedded/cef/blob/master/LICENSE.txt): CEF license text
+- [CEF binary downloads](https://cef-builds.spotifycdn.com/index.html): official binary distributions that include redistribution notes and bundled notices
+
+If you bootstrap or auto-download CEF in a local checkout, the downloaded runtime also includes these local notice files:
+
+- `third_party/cef/current/LICENSE.txt`
+- `third_party/cef/current/CREDITS.html`
+- `third_party/cef/current/README.txt`
+
+Those files are generated under `third_party/`, which is gitignored, so this README does not link to them directly.
 
 According to the CEF binary distribution included in this workspace, the CEF project is BSD licensed, and additional Chromium/third-party software in the distribution is covered by other licenses. If you redistribute an application bundled with CEF, you should make sure the required license texts and notices are included with your distribution.
 
