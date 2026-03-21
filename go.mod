@@ -1,6 +1,6 @@
 module fyne_browser
 
-go 1.26.1
+go 1.26
 
 require fyne.io/fyne/v2 v2.7.3
 
