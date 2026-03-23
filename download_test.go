@@ -70,7 +70,48 @@ func TestFindFramework(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindFramework returned error: %v", err)
 	}
-	if framework.Root != frameworkRoot {
-		t.Fatalf("unexpected root: %s", framework.Root)
+	wantRoot, err := filepath.EvalSymlinks(frameworkRoot)
+	if err != nil {
+		wantRoot = frameworkRoot
+	}
+	wantRoot, err = filepath.Abs(wantRoot)
+	if err != nil {
+		t.Fatalf("normalize expected root: %v", err)
+	}
+	if framework.Root != wantRoot {
+		t.Fatalf("unexpected root: got %s want %s", framework.Root, wantRoot)
+	}
+}
+
+func TestPlatformName(t *testing.T) {
+	tests := []struct {
+		goos    string
+		goarch  string
+		want    string
+		wantErr bool
+	}{
+		{goos: "linux", goarch: "amd64", want: "linux64"},
+		{goos: "linux", goarch: "arm64", want: "linuxarm64"},
+		{goos: "darwin", goarch: "amd64", want: "macosx64"},
+		{goos: "darwin", goarch: "arm64", want: "macosarm64"},
+		{goos: "windows", goarch: "amd64", want: "windows64"},
+		{goos: "windows", goarch: "arm64", want: "windowsarm64"},
+		{goos: "darwin", goarch: "386", wantErr: true},
+	}
+
+	for _, test := range tests {
+		got, err := platformName(test.goos, test.goarch)
+		if test.wantErr {
+			if err == nil {
+				t.Fatalf("platformName(%q, %q) expected error", test.goos, test.goarch)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("platformName(%q, %q) returned error: %v", test.goos, test.goarch, err)
+		}
+		if got != test.want {
+			t.Fatalf("platformName(%q, %q) = %q, want %q", test.goos, test.goarch, got, test.want)
+		}
 	}
 }

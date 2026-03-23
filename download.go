@@ -268,7 +268,11 @@ func LinkCurrentFramework(linkPath string, framework *Framework) error {
 }
 
 func currentPlatform() (string, error) {
-	switch runtime.GOOS + "/" + runtime.GOARCH {
+	return platformName(runtime.GOOS, runtime.GOARCH)
+}
+
+func platformName(goos, goarch string) (string, error) {
+	switch goos + "/" + goarch {
 	case "linux/amd64":
 		return "linux64", nil
 	case "linux/arm64":
@@ -282,7 +286,7 @@ func currentPlatform() (string, error) {
 	case "windows/arm64":
 		return "windowsarm64", nil
 	}
-	return "", fmt.Errorf("fynecef: unsupported platform %s/%s", runtime.GOOS, runtime.GOARCH)
+	return "", fmt.Errorf("fynecef: unsupported platform %s/%s", goos, goarch)
 }
 
 func resolveArchiveURL(manifestURL, archiveName string) (string, error) {

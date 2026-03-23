@@ -1,4 +1,4 @@
-//go:build cgo && (darwin || windows)
+//go:build cgo && windows
 
 package fynecef
 

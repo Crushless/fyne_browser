@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -18,6 +19,18 @@ import (
 )
 
 func main() {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if runtime.GOOS == "darwin" && strings.Contains(fmt.Sprint(recovered), "FormatUnavailable: NSGL") {
+				fmt.Fprintln(os.Stderr, "demo startup failed: Fyne/GLFW could not create a macOS OpenGL window in this session")
+				fmt.Fprintln(os.Stderr, "this is below fynecef itself; the browser backend was not reached")
+				fmt.Fprintln(os.Stderr, "try running from a local logged-in macOS desktop session rather than SSH, headless CI, or a restricted remote session")
+				os.Exit(1)
+			}
+			panic(recovered)
+		}
+	}()
+
 	if err := fynecef.Init(fynecef.RuntimeOptions{
 		FrameworkRoot: filepath.Join("third_party", "cef", "current"),
 		SearchPaths: []string{
@@ -32,6 +45,7 @@ func main() {
 		CachePath:     filepath.Join(os.TempDir(), "fynecef-demo-cache"),
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "cef init failed: %v\n", err)
+		os.Exit(1)
 	}
 
 	a := app.New()
@@ -119,7 +133,10 @@ func main() {
 		},
 	})
 	if browserErr != nil {
-		dialog.ShowError(browserErr, w)
+		fmt.Fprintf(os.Stderr, "browser init failed: %v\n", browserErr)
+		_ = browser.Close()
+		fynecef.Shutdown()
+		os.Exit(1)
 	}
 
 	openLocation := func() {

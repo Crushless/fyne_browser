@@ -15,6 +15,7 @@ func main() {
 		dest     = flag.String("dest", filepath.Join("third_party", "cef", "builds"), "directory to store downloaded CEF builds")
 		channel  = flag.String("channel", string(fynecef.ChannelStable), "release channel to install: stable or beta")
 		pkgType  = flag.String("package", string(fynecef.PackageTypeMinimal), "package type to install: minimal, standard or client")
+		platform = flag.String("platform", "", "target CEF platform, for example linux64, macosx64, macosarm64, windows64")
 		linkPath = flag.String("link", filepath.Join("third_party", "cef", "current"), "stable symlink path used by local builds")
 		manifest = flag.String("manifest", fynecef.OfficialManifestURL, "CEF manifest URL")
 	)
@@ -23,6 +24,7 @@ func main() {
 	framework, err := fynecef.EnsureFramework(fynecef.InstallOptions{
 		Context:       context.Background(),
 		ManifestURL:   *manifest,
+		Platform:      *platform,
 		Channel:       fynecef.BuildChannel(*channel),
 		PackageType:   fynecef.PackageType(*pkgType),
 		Destination:   *dest,

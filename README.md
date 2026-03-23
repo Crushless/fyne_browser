@@ -22,8 +22,9 @@ Current status:
 
 - Linux with `cgo` enabled: supported
 - Linux session type: X11 required for the current backend (but works with Xwayland)
+- macOS: supported with a native WebKit backend
+- macOS request interception: limited to top-level navigation decisions
 - Windows: framework discovery/download is wired up, native embedding is not implemented yet
-- macOS: framework discovery/download is wired up, native embedding is not implemented yet
 
 ## Features
 
@@ -73,6 +74,12 @@ go run ./cmd/cefbootstrap
 ```
 
 This installs the latest matching framework under `third_party/cef/builds` and updates `third_party/cef/current`.
+
+To prefetch a specific target such as Intel macOS, pass `-platform` explicitly:
+
+```bash
+go run ./cmd/cefbootstrap -platform macosx64
+```
 
 ## Minimal Usage
 
@@ -214,8 +221,8 @@ go run ./cmd/demo
 | Platform | Status | Notes |
 | --- | --- | --- |
 | Linux | Supported | Current implementation targets X11 and uses CEF windowless rendering embedded into the Fyne widget |
+| macOS | Supported | Native backend uses `WKWebView` for browser embedding; request interception is limited to navigations |
 | Windows | Not yet implemented | Framework discovery/download is present, native embedding is still pending |
-| macOS | Not yet implemented | Framework discovery/download is present, native embedding is still pending |
 
 ## Repository Layout
 
