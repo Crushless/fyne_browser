@@ -114,7 +114,17 @@ jobs:
           PY
 
       - name: ⚗️ Build
-        run: go build -v ./...
+        run: |
+          if [ "$(uname -s)" = "Darwin" ]; then
+            export DYLD_FRAMEWORK_PATH="$PWD/third_party/cef/current/Release"
+            export DYLD_LIBRARY_PATH="$PWD/third_party/cef/current/Release/Chromium Embedded Framework.framework/Libraries"
+          fi
+          go build -v ./...
 
       - name: 🔬 Test
-        run: go test -v ./...
+        run: |
+          if [ "$(uname -s)" = "Darwin" ]; then
+            export DYLD_FRAMEWORK_PATH="$PWD/third_party/cef/current/Release"
+            export DYLD_LIBRARY_PATH="$PWD/third_party/cef/current/Release/Chromium Embedded Framework.framework/Libraries"
+          fi
+          go test -v ./...
