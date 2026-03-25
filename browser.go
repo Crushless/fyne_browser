@@ -60,10 +60,11 @@ type Browser struct {
 }
 
 type framePayload struct {
-	width  int
-	height int
-	stride int
-	pixels []byte
+	width      int
+	height     int
+	stride     int
+	pixels     []byte
+	enqueuedAt time.Time
 }
 
 type frameRect struct {
@@ -379,31 +380,35 @@ func (b *Browser) queueFrame(width, height, stride int, pixels []byte) {
 		return
 	}
 
+	start := time.Now()
 	schedule := false
 
 	b.mu.Lock()
 	b.pendingFrame = &framePayload{
-		width:  width,
-		height: height,
-		stride: stride,
-		pixels: pixels,
+		width:      width,
+		height:     height,
+		stride:     stride,
+		pixels:     pixels,
+		enqueuedAt: start,
 	}
 	if !b.frameDispatchQueued {
 		b.frameDispatchQueued = true
 		schedule = true
 	}
 	b.mu.Unlock()
+	frameProfilerState.observeQueue(time.Since(start), 0)
 
 	if !schedule {
 		return
 	}
 
 	dispatch := b.applyQueuedFrame
-	if fyne.CurrentApp() == nil {
-		dispatch()
-		return
+	if !tryFyneDo(dispatch) {
+		b.mu.Lock()
+		b.pendingFrame = nil
+		b.frameDispatchQueued = false
+		b.mu.Unlock()
 	}
-	fyne.Do(dispatch)
 }
 
 func (b *Browser) queueFrameRects(width, height, stride int, rects []frameRect, apply func([]byte, int)) bool {
@@ -411,22 +416,31 @@ func (b *Browser) queueFrameRects(width, height, stride int, rects []frameRect, 
 		return false
 	}
 
+	start := time.Now()
+	var cloneDuration time.Duration
 	schedule := false
 
 	b.mu.Lock()
 	if !framePayloadMatches(b.pendingFrame, width, height, stride) {
 		if !frameImageMatches(b.frame, width, height, stride) {
 			b.mu.Unlock()
+			frameProfilerState.observeQueue(time.Since(start), 0)
 			return false
 		}
+		cloneStart := time.Now()
 		base := make([]byte, len(b.frame.Pix))
 		copy(base, b.frame.Pix)
+		cloneDuration = time.Since(cloneStart)
 		b.pendingFrame = &framePayload{
-			width:  width,
-			height: height,
-			stride: stride,
-			pixels: base,
+			width:      width,
+			height:     height,
+			stride:     stride,
+			pixels:     base,
+			enqueuedAt: start,
 		}
+	}
+	if b.pendingFrame.enqueuedAt.IsZero() {
+		b.pendingFrame.enqueuedAt = start
 	}
 	apply(b.pendingFrame.pixels, stride)
 
@@ -435,17 +449,20 @@ func (b *Browser) queueFrameRects(width, height, stride int, rects []frameRect, 
 		schedule = true
 	}
 	b.mu.Unlock()
+	frameProfilerState.observeQueue(time.Since(start), cloneDuration)
 
 	if !schedule {
 		return true
 	}
 
 	dispatch := b.applyQueuedFrame
-	if fyne.CurrentApp() == nil {
-		dispatch()
-		return true
+	if !tryFyneDo(dispatch) {
+		b.mu.Lock()
+		b.pendingFrame = nil
+		b.frameDispatchQueued = false
+		b.mu.Unlock()
+		return false
 	}
-	fyne.Do(dispatch)
 	return true
 }
 
@@ -459,7 +476,13 @@ func (b *Browser) applyQueuedFrame() {
 	if frame == nil {
 		return
 	}
+	wait := time.Duration(0)
+	if !frame.enqueuedAt.IsZero() {
+		wait = time.Since(frame.enqueuedAt)
+	}
+	start := time.Now()
 	b.setFrame(frame.width, frame.height, frame.stride, frame.pixels)
+	frameProfilerState.observeApply(wait, time.Since(start))
 }
 
 func (b *Browser) setAddress(rawURL string) {
@@ -658,11 +681,12 @@ func (b *Browser) setFrameRate(rate int) {
 
 func (b *Browser) scheduleBoundsSync(delay time.Duration) {
 	time.AfterFunc(delay, func() {
-		if fyne.CurrentApp() == nil {
-			b.flushBoundsSync()
-			return
+		if !tryFyneDo(b.flushBoundsSync) {
+			b.mu.Lock()
+			b.boundsSyncDirty = false
+			b.boundsSyncScheduled = false
+			b.mu.Unlock()
 		}
-		fyne.Do(b.flushBoundsSync)
 	})
 }
 

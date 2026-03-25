@@ -596,7 +596,7 @@ static void CEF_CALLBACK fynecef_on_paint(cef_render_handler_t* self,
   }
 
   goCEFOnFrame(wrapper->owner->go_handle, (void*)buffer, width, height,
-               width * 4, dirtyRectsCount, dirtyRects);
+               width * 4, dirtyRectsCount, (cef_rect_t*)dirtyRects);
 }
 
 static void CEF_CALLBACK fynecef_on_accelerated_paint(

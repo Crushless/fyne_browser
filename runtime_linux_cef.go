@@ -160,6 +160,7 @@ func Init(opts RuntimeOptions) error {
 	if runtimeState != nil {
 		return nil
 	}
+	fyneDispatchStopped.Store(false)
 
 	framework, err := resolveRuntimeFramework(opts, true)
 	if err != nil {
@@ -215,6 +216,8 @@ func Init(opts RuntimeOptions) error {
 }
 
 func Shutdown() {
+	fyneDispatchStopped.Store(true)
+
 	runtimeMu.Lock()
 	rt := runtimeState
 	runtimeState = nil
@@ -1063,11 +1066,7 @@ func cefKeyCode(name string) (int, bool) {
 }
 
 func dispatchToFyne(fn func()) {
-	if fyne.CurrentApp() == nil {
-		fn()
-		return
-	}
-	fyne.Do(fn)
+	_ = tryFyneDo(fn)
 }
 
 func snapshot(browser *Browser) browserSnapshot {
@@ -1502,6 +1501,7 @@ func goCEFOnBeforeClose(handle C.uintptr_t) {
 
 //export goCEFOnFrame
 func goCEFOnFrame(handle C.uintptr_t, buffer unsafe.Pointer, width C.int, height C.int, stride C.int, dirtyRectCount C.size_t, dirtyRects *C.cef_rect_t) {
+	callbackStart := time.Now()
 	backend := lookupBackend(uintptr(handle))
 	if backend == nil || buffer == nil || width <= 0 || height <= 0 || stride <= 0 {
 		return
@@ -1510,6 +1510,11 @@ func goCEFOnFrame(handle C.uintptr_t, buffer unsafe.Pointer, width C.int, height
 	frameWidth := int(width)
 	frameHeight := int(height)
 	frameStride := int(stride)
+	copyDuration := time.Duration(0)
+	copyBytes := 0
+	frameFull := true
+	frameFallback := false
+	frameRects := 0
 
 	copyFrameRect := func(x, y, rectWidth, rectHeight int) []byte {
 		copyStride := rectWidth * 4
@@ -1518,6 +1523,7 @@ func goCEFOnFrame(handle C.uintptr_t, buffer unsafe.Pointer, width C.int, height
 			return nil
 		}
 		raw := make([]byte, size)
+		copyStart := time.Now()
 		C.fynecef_copy_bgra_rect_to_rgba(
 			(*C.uint8_t)(unsafe.Pointer(&raw[0])),
 			C.int(copyStride),
@@ -1528,10 +1534,13 @@ func goCEFOnFrame(handle C.uintptr_t, buffer unsafe.Pointer, width C.int, height
 			C.int(rectWidth),
 			C.int(rectHeight),
 		)
+		copyDuration += time.Since(copyStart)
+		copyBytes += size
 		return raw
 	}
 
 	fullFrame := func() {
+		frameFull = true
 		raw := copyFrameRect(0, 0, frameWidth, frameHeight)
 		if raw == nil {
 			return
@@ -1541,6 +1550,7 @@ func goCEFOnFrame(handle C.uintptr_t, buffer unsafe.Pointer, width C.int, height
 
 	if dirtyRectCount == 0 || dirtyRects == nil {
 		fullFrame()
+		frameProfilerState.observeFrame(time.Since(callbackStart), copyDuration, true, 0, copyBytes, false)
 		return
 	}
 
@@ -1575,6 +1585,7 @@ func goCEFOnFrame(handle C.uintptr_t, buffer unsafe.Pointer, width C.int, height
 
 		if rectX == 0 && rectY == 0 && rectWidth == frameWidth && rectHeight == frameHeight {
 			fullFrame()
+			frameProfilerState.observeFrame(time.Since(callbackStart), copyDuration, true, 1, copyBytes, false)
 			return
 		}
 
@@ -1588,11 +1599,15 @@ func goCEFOnFrame(handle C.uintptr_t, buffer unsafe.Pointer, width C.int, height
 
 	if len(clippedRects) == 0 {
 		fullFrame()
+		frameProfilerState.observeFrame(time.Since(callbackStart), copyDuration, true, 0, copyBytes, false)
 		return
 	}
+	frameFull = false
+	frameRects = len(clippedRects)
 	if !backend.browser.queueFrameRects(frameWidth, frameHeight, frameStride, clippedRects, func(dst []byte, dstStride int) {
 		for _, rect := range clippedRects {
 			dstStart := rect.y*dstStride + rect.x*4
+			copyStart := time.Now()
 			C.fynecef_copy_bgra_rect_to_rgba(
 				(*C.uint8_t)(unsafe.Pointer(&dst[dstStart])),
 				C.int(dstStride),
@@ -1603,8 +1618,12 @@ func goCEFOnFrame(handle C.uintptr_t, buffer unsafe.Pointer, width C.int, height
 				C.int(rect.width),
 				C.int(rect.height),
 			)
+			copyDuration += time.Since(copyStart)
+			copyBytes += rect.width * rect.height * 4
 		}
 	}) {
+		frameFallback = true
 		fullFrame()
 	}
+	frameProfilerState.observeFrame(time.Since(callbackStart), copyDuration, frameFull, frameRects, copyBytes, frameFallback)
 }
