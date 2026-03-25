@@ -15,7 +15,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	fynecef "fyne_browser"
+	fynecef "github.com/Crushless/fyne_browser"
 )
 
 func main() {

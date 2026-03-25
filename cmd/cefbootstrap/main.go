@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	fynecef "fyne_browser"
+	fynecef "github.com/Crushless/fyne_browser"
 )
 
 func main() {
