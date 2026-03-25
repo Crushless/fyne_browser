@@ -98,7 +98,7 @@ func NewBrowser(opts BrowserOptions) (*Browser, error) {
 		return b, err
 	}
 	if opts.InitialURL != "" {
-		if loadErr := b.LoadURL(opts.InitialURL); loadErr != nil && err == nil {
+		if loadErr := b.LoadURL(opts.InitialURL); loadErr != nil {
 			err = loadErr
 		}
 	}
