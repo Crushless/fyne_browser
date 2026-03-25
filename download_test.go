@@ -83,6 +83,56 @@ func TestFindFramework(t *testing.T) {
 	}
 }
 
+func TestFindFrameworkHonorsRequestedPlatform(t *testing.T) {
+	root := t.TempDir()
+	linuxRoot := filepath.Join(root, "linux64-minimal-test")
+	macRoot := filepath.Join(root, "macosx64-minimal-test")
+
+	for _, frameworkRoot := range []string{linuxRoot, macRoot} {
+		for _, dir := range []string{
+			filepath.Join(frameworkRoot, "include"),
+			filepath.Join(frameworkRoot, "Release"),
+			filepath.Join(frameworkRoot, "Resources"),
+		} {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatalf("mkdir %s: %v", dir, err)
+			}
+		}
+		if err := os.WriteFile(filepath.Join(frameworkRoot, "Release", "libcef.so"), []byte("stub"), 0o644); err != nil {
+			t.Fatalf("write libcef.so for %s: %v", frameworkRoot, err)
+		}
+	}
+
+	framework, err := FindFramework(InstallOptions{
+		SearchPaths: []string{root},
+		Platform:    "macosx64",
+	})
+	if err != nil {
+		t.Fatalf("FindFramework returned error: %v", err)
+	}
+	if framework.Platform != "macosx64" {
+		t.Fatalf("unexpected platform: got %s want macosx64", framework.Platform)
+	}
+}
+
+func TestInferFrameworkPlatform(t *testing.T) {
+	tests := []struct {
+		root string
+		want string
+	}{
+		{root: filepath.Join("tmp", "linux64-minimal-123"), want: "linux64"},
+		{root: filepath.Join("tmp", "macosx64-minimal-123"), want: "macosx64"},
+		{root: filepath.Join("tmp", "macosarm64-minimal-123"), want: "macosarm64"},
+		{root: filepath.Join("tmp", "unknown"), want: ""},
+	}
+
+	for _, test := range tests {
+		if got := inferFrameworkPlatform(test.root); got != test.want {
+			t.Fatalf("inferFrameworkPlatform(%q) = %q, want %q", test.root, got, test.want)
+		}
+	}
+}
+
 func TestPlatformName(t *testing.T) {
 	tests := []struct {
 		goos    string

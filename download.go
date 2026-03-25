@@ -148,6 +148,9 @@ func FindFramework(opts InstallOptions) (*Framework, error) {
 			continue
 		}
 		if framework, ok := inspectFramework(root); ok {
+			if opts.Platform != "" && framework.Platform != "" && framework.Platform != opts.Platform {
+				continue
+			}
 			return framework, nil
 		}
 		entries, err := os.ReadDir(root)
@@ -159,6 +162,9 @@ func FindFramework(opts InstallOptions) (*Framework, error) {
 				continue
 			}
 			if framework, ok := inspectFramework(filepath.Join(root, entry.Name())); ok {
+				if opts.Platform != "" && framework.Platform != "" && framework.Platform != opts.Platform {
+					continue
+				}
 				return framework, nil
 			}
 		}
@@ -417,7 +423,11 @@ func inspectFramework(root string) (*Framework, bool) {
 	required := []string{
 		filepath.Join(root, "include"),
 		filepath.Join(root, "Release"),
-		filepath.Join(root, "Resources"),
+	}
+	if runtime.GOOS == "darwin" {
+		required = append(required, filepath.Join(root, "Release", "Chromium Embedded Framework.framework", "Resources"))
+	} else {
+		required = append(required, filepath.Join(root, "Resources"))
 	}
 	for _, path := range required {
 		info, err := os.Stat(path)
@@ -437,7 +447,30 @@ func inspectFramework(root string) (*Framework, bool) {
 		return nil, false
 	}
 
-	return &Framework{Root: root}, true
+	return &Framework{
+		Root:     root,
+		Platform: inferFrameworkPlatform(root),
+	}, true
+}
+
+func inferFrameworkPlatform(root string) string {
+	root = filepath.Clean(root)
+	parts := strings.Split(root, string(filepath.Separator))
+	for _, part := range parts {
+		for _, platform := range []string{
+			"linux64",
+			"linuxarm64",
+			"macosx64",
+			"macosarm64",
+			"windows64",
+			"windowsarm64",
+		} {
+			if part == platform || strings.HasPrefix(part, platform+"-") {
+				return platform
+			}
+		}
+	}
+	return ""
 }
 
 func safeFrameworkDir(build *Framework) string {

@@ -24,8 +24,8 @@ Current status:
 
 - Linux with `cgo` enabled: supported
 - Linux session type: X11 required for the current backend (but works with Xwayland)
-- macOS: supported with a native WebKit backend
-- macOS request interception: limited to top-level navigation decisions
+- macOS: supported with the same CEF-based backend family used on Linux
+- macOS request interception: supported through CEF request callbacks
 - Windows: framework discovery/download is wired up, native embedding is not implemented yet
 
 ## Features
@@ -223,7 +223,7 @@ go run ./cmd/demo
 | Platform | Status | Notes |
 | --- | --- | --- |
 | Linux | Supported | Current implementation targets X11 and uses CEF windowless rendering embedded into the Fyne widget |
-| macOS | Supported | Native backend uses `WKWebView` for browser embedding; request interception is limited to navigations |
+| macOS | Supported | Uses CEF windowless rendering with the same callback model as Linux |
 | Windows | Not yet implemented | Framework discovery/download is present, native embedding is still pending |
 
 ## Repository Layout
