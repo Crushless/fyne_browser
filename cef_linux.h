@@ -6,6 +6,7 @@
 #include "include/capi/cef_app_capi.h"
 #include "include/capi/cef_browser_capi.h"
 #include "include/capi/cef_client_capi.h"
+#include "include/capi/cef_context_menu_handler_capi.h"
 #include "include/capi/cef_display_handler_capi.h"
 #include "include/capi/cef_life_span_handler_capi.h"
 #include "include/capi/cef_load_handler_capi.h"
@@ -16,6 +17,26 @@
 #include "include/internal/cef_types_linux.h"
 
 typedef struct fynecef_browser_s fynecef_browser_t;
+typedef struct fynecef_menu_item_s fynecef_menu_item_t;
+typedef struct fynecef_context_menu_s fynecef_context_menu_t;
+
+struct fynecef_menu_item_s {
+  int type;
+  int command_id;
+  int enabled;
+  int checked;
+  char* label;
+  size_t child_count;
+  struct fynecef_menu_item_s* children;
+};
+
+struct fynecef_context_menu_s {
+  int x;
+  int y;
+  size_t item_count;
+  struct fynecef_menu_item_s* items;
+  struct _cef_run_context_menu_callback_t* callback;
+};
 
 int fynecef_execute_process(int argc, char** argv);
 int fynecef_initialize(int argc,
@@ -73,11 +94,16 @@ void fynecef_browser_key_event(fynecef_browser_t* browser,
                                uint16_t character,
                                uint16_t unmodified_character);
 void fynecef_browser_close(fynecef_browser_t* browser);
+void fynecef_context_menu_continue(fynecef_context_menu_t* menu,
+                                   int command_id,
+                                   uint32_t event_flags);
+void fynecef_context_menu_cancel(fynecef_context_menu_t* menu);
 
 extern void goCEFOnAddressChange(uintptr_t handle, char* url);
 extern void goCEFOnTitleChange(uintptr_t handle, char* title);
 extern void goCEFOnLoadProgress(uintptr_t handle, double progress);
 extern void goCEFOnCursorChange(uintptr_t handle, int cursor_type);
+extern void goCEFOnContextMenu(uintptr_t handle, fynecef_context_menu_t* menu);
 extern void goCEFOnLoadingStateChange(uintptr_t handle,
                                       int is_loading,
                                       int can_go_back,

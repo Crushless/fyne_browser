@@ -13,14 +13,14 @@ import (
 )
 
 var (
-	_ fyne.Widget         = (*Browser)(nil)
-	_ fyne.Draggable      = (*Browser)(nil)
-	_ fyne.Focusable      = (*Browser)(nil)
-	_ fyne.Scrollable     = (*Browser)(nil)
-	_ desktop.Mouseable   = (*Browser)(nil)
-	_ desktop.Hoverable   = (*Browser)(nil)
-	_ desktop.Keyable     = (*Browser)(nil)
-	_ desktop.Cursorable  = (*Browser)(nil)
+	_ fyne.Widget        = (*Browser)(nil)
+	_ fyne.Draggable     = (*Browser)(nil)
+	_ fyne.Focusable     = (*Browser)(nil)
+	_ fyne.Scrollable    = (*Browser)(nil)
+	_ desktop.Mouseable  = (*Browser)(nil)
+	_ desktop.Hoverable  = (*Browser)(nil)
+	_ desktop.Keyable    = (*Browser)(nil)
+	_ desktop.Cursorable = (*Browser)(nil)
 )
 
 type Browser struct {
@@ -52,6 +52,11 @@ type Browser struct {
 	cursor              desktop.StandardCursor
 	activeMouseButtons  desktop.MouseButton
 	activeModifiers     desktop.Modifier
+	lastClickAt         time.Time
+	lastClickPos        fyne.Position
+	lastClickButton     desktop.MouseButton
+	lastClickCount      int
+	pressedClickCount   int
 }
 
 type framePayload struct {
@@ -241,11 +246,13 @@ func (b *Browser) MouseDown(ev *desktop.MouseEvent) {
 	if ev == nil || b.backend == nil {
 		return
 	}
+	clickCount := b.nextClickCount(ev.Position, ev.Button)
 	b.mu.Lock()
 	b.activeMouseButtons |= ev.Button
 	b.activeModifiers = ev.Modifier
+	b.pressedClickCount = clickCount
 	b.mu.Unlock()
-	_ = b.backend.MouseDown(int(ev.Position.X), int(ev.Position.Y), ev.Button, ev.Modifier)
+	_ = b.backend.MouseDown(int(ev.Position.X), int(ev.Position.Y), ev.Button, ev.Modifier, clickCount)
 }
 
 func (b *Browser) MouseUp(ev *desktop.MouseEvent) {
@@ -253,10 +260,15 @@ func (b *Browser) MouseUp(ev *desktop.MouseEvent) {
 		return
 	}
 	b.mu.Lock()
+	clickCount := b.pressedClickCount
+	if clickCount == 0 {
+		clickCount = 1
+	}
 	b.activeMouseButtons &^= ev.Button
 	b.activeModifiers = ev.Modifier
+	b.pressedClickCount = 0
 	b.mu.Unlock()
-	_ = b.backend.MouseUp(int(ev.Position.X), int(ev.Position.Y), ev.Button, ev.Modifier)
+	_ = b.backend.MouseUp(int(ev.Position.X), int(ev.Position.Y), ev.Button, ev.Modifier, clickCount)
 }
 
 func (b *Browser) MouseIn(ev *desktop.MouseEvent) {
@@ -345,7 +357,6 @@ func (b *Browser) setFrame(width, height, stride int, pixels []byte) {
 	b.mu.Unlock()
 
 	canvas.Refresh(b.imageObject)
-	canvas.Refresh(b)
 }
 
 func (b *Browser) queueFrame(width, height, stride int, pixels []byte) {
@@ -412,6 +423,42 @@ func (b *Browser) setCursor(cursor desktop.StandardCursor) {
 	b.cursor = cursor
 	b.mu.Unlock()
 	canvas.Refresh(b)
+}
+
+func (b *Browser) nextClickCount(pos fyne.Position, button desktop.MouseButton) int {
+	count := 1
+	now := time.Now()
+
+	delay := 300 * time.Millisecond
+	if app := fyne.CurrentApp(); app != nil && app.Driver() != nil {
+		delay = app.Driver().DoubleTapDelay()
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if button == b.lastClickButton &&
+		now.Sub(b.lastClickAt) <= delay &&
+		abs32(pos.X-b.lastClickPos.X) <= 4 &&
+		abs32(pos.Y-b.lastClickPos.Y) <= 4 {
+		count = b.lastClickCount + 1
+		if count > 3 {
+			count = 1
+		}
+	}
+
+	b.lastClickAt = now
+	b.lastClickPos = pos
+	b.lastClickButton = button
+	b.lastClickCount = count
+	return count
+}
+
+func abs32(value float32) float32 {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func (b *Browser) setTitle(title string) {

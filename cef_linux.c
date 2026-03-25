@@ -19,6 +19,11 @@ typedef struct {
 } fynecef_display_wrapper_t;
 
 typedef struct {
+  cef_context_menu_handler_t cef;
+  struct fynecef_browser_s* owner;
+} fynecef_context_wrapper_t;
+
+typedef struct {
   cef_load_handler_t cef;
   struct fynecef_browser_s* owner;
 } fynecef_load_wrapper_t;
@@ -48,6 +53,7 @@ struct fynecef_browser_s {
   uintptr_t go_handle;
   fynecef_client_wrapper_t client;
   fynecef_display_wrapper_t display;
+  fynecef_context_wrapper_t context;
   fynecef_load_wrapper_t load;
   fynecef_render_wrapper_t render;
   fynecef_request_wrapper_t request;
@@ -153,6 +159,7 @@ static int fynecef_owner_has_at_least_one_ref(struct fynecef_browser_s* owner) {
 
 DEFINE_REFCOUNTING(fynecef_client, fynecef_client_wrapper_t)
 DEFINE_REFCOUNTING(fynecef_display, fynecef_display_wrapper_t)
+DEFINE_REFCOUNTING(fynecef_context, fynecef_context_wrapper_t)
 DEFINE_REFCOUNTING(fynecef_load, fynecef_load_wrapper_t)
 DEFINE_REFCOUNTING(fynecef_render, fynecef_render_wrapper_t)
 DEFINE_REFCOUNTING(fynecef_request, fynecef_request_wrapper_t)
@@ -224,6 +231,14 @@ fynecef_client_get_display_handler(cef_client_t* self) {
   return &wrapper->owner->display.cef;
 }
 
+static cef_context_menu_handler_t* CEF_CALLBACK
+fynecef_client_get_context_menu_handler(cef_client_t* self) {
+  fynecef_client_wrapper_t* wrapper = (fynecef_client_wrapper_t*)self;
+  wrapper->owner->context.cef.base.add_ref(
+      (cef_base_ref_counted_t*)&wrapper->owner->context);
+  return &wrapper->owner->context.cef;
+}
+
 static cef_load_handler_t* CEF_CALLBACK
 fynecef_client_get_load_handler(cef_client_t* self) {
   fynecef_client_wrapper_t* wrapper = (fynecef_client_wrapper_t*)self;
@@ -290,6 +305,177 @@ static int CEF_CALLBACK fynecef_on_cursor_change(
     const cef_cursor_info_t* custom_cursor_info) {
   fynecef_display_wrapper_t* wrapper = (fynecef_display_wrapper_t*)self;
   goCEFOnCursorChange(wrapper->owner->go_handle, (int)type);
+  return 1;
+}
+
+static char* fynecef_dup_userfree_string(cef_string_userfree_t value) {
+  cef_string_utf8_t utf8 = {};
+  char* result = NULL;
+  size_t len;
+
+  if (value != NULL && value->str != NULL && value->length > 0 &&
+      cef_string_utf16_to_utf8(value->str, value->length, &utf8) &&
+      utf8.str != NULL) {
+    len = strlen(utf8.str);
+    result = (char*)calloc(len + 1, sizeof(char));
+    if (result != NULL) {
+      memcpy(result, utf8.str, len);
+      result[len] = '\0';
+    }
+  }
+
+  cef_string_utf8_clear(&utf8);
+  if (value != NULL) {
+    cef_string_userfree_free(value);
+  }
+  return result;
+}
+
+static void fynecef_free_menu_items(fynecef_menu_item_t* items, size_t count) {
+  size_t i;
+  if (items == NULL) {
+    return;
+  }
+  for (i = 0; i < count; i++) {
+    free(items[i].label);
+    fynecef_free_menu_items(items[i].children, items[i].child_count);
+  }
+  free(items);
+}
+
+static int fynecef_copy_menu_model(cef_menu_model_t* model,
+                                   fynecef_menu_item_t** out_items,
+                                   size_t* out_count) {
+  size_t count, i, visible_count = 0, target = 0;
+  fynecef_menu_item_t* items = NULL;
+
+  if (out_items == NULL || out_count == NULL || model == NULL ||
+      model->get_count == NULL) {
+    return 0;
+  }
+
+  count = model->get_count(model);
+  for (i = 0; i < count; i++) {
+    if (model->is_visible_at != NULL && !model->is_visible_at(model, i)) {
+      continue;
+    }
+    visible_count++;
+  }
+
+  if (visible_count == 0) {
+    *out_items = NULL;
+    *out_count = 0;
+    return 1;
+  }
+
+  items =
+      (fynecef_menu_item_t*)calloc(visible_count, sizeof(fynecef_menu_item_t));
+  if (items == NULL) {
+    return 0;
+  }
+
+  for (i = 0; i < count; i++) {
+    cef_menu_model_t* child;
+    if (model->is_visible_at != NULL && !model->is_visible_at(model, i)) {
+      continue;
+    }
+
+    items[target].type =
+        model->get_type_at != NULL ? (int)model->get_type_at(model, i) : 0;
+    items[target].command_id =
+        model->get_command_id_at != NULL ? model->get_command_id_at(model, i)
+                                         : -1;
+    items[target].enabled =
+        model->is_enabled_at != NULL ? model->is_enabled_at(model, i) : 1;
+    items[target].checked =
+        model->is_checked_at != NULL ? model->is_checked_at(model, i) : 0;
+    items[target].label = model->get_label_at != NULL
+                              ? fynecef_dup_userfree_string(
+                                    model->get_label_at(model, i))
+                              : NULL;
+
+    child =
+        model->get_sub_menu_at != NULL ? model->get_sub_menu_at(model, i) : NULL;
+    if (child != NULL &&
+        !fynecef_copy_menu_model(child, &items[target].children,
+                                 &items[target].child_count)) {
+      fynecef_free_menu_items(items, visible_count);
+      return 0;
+    }
+    target++;
+  }
+
+  *out_items = items;
+  *out_count = visible_count;
+  return 1;
+}
+
+static fynecef_context_menu_t* fynecef_create_context_menu(
+    cef_context_menu_params_t* params,
+    cef_menu_model_t* model,
+    cef_run_context_menu_callback_t* callback) {
+  fynecef_context_menu_t* menu;
+
+  if (params == NULL || model == NULL || callback == NULL) {
+    return NULL;
+  }
+
+  menu = (fynecef_context_menu_t*)calloc(1, sizeof(fynecef_context_menu_t));
+  if (menu == NULL) {
+    return NULL;
+  }
+
+  menu->x = params->get_xcoord != NULL ? params->get_xcoord(params) : 0;
+  menu->y = params->get_ycoord != NULL ? params->get_ycoord(params) : 0;
+  menu->callback = callback;
+
+  if (callback->base.add_ref != NULL) {
+    callback->base.add_ref((cef_base_ref_counted_t*)callback);
+  }
+
+  if (!fynecef_copy_menu_model(model, &menu->items, &menu->item_count)) {
+    if (callback->base.release != NULL) {
+      callback->base.release((cef_base_ref_counted_t*)callback);
+    }
+    free(menu);
+    return NULL;
+  }
+
+  return menu;
+}
+
+static void fynecef_destroy_context_menu(fynecef_context_menu_t* menu) {
+  if (menu == NULL) {
+    return;
+  }
+  fynecef_free_menu_items(menu->items, menu->item_count);
+  if (menu->callback != NULL && menu->callback->base.release != NULL) {
+    menu->callback->base.release((cef_base_ref_counted_t*)menu->callback);
+  }
+  free(menu);
+}
+
+static void CEF_CALLBACK fynecef_on_before_context_menu(
+    cef_context_menu_handler_t* self,
+    cef_browser_t* browser,
+    cef_frame_t* frame,
+    cef_context_menu_params_t* params,
+    cef_menu_model_t* model) {}
+
+static int CEF_CALLBACK fynecef_run_context_menu(
+    cef_context_menu_handler_t* self,
+    cef_browser_t* browser,
+    cef_frame_t* frame,
+    cef_context_menu_params_t* params,
+    cef_menu_model_t* model,
+    cef_run_context_menu_callback_t* callback) {
+  fynecef_context_wrapper_t* wrapper = (fynecef_context_wrapper_t*)self;
+  fynecef_context_menu_t* menu =
+      fynecef_create_context_menu(params, model, callback);
+  if (menu == NULL) {
+    return 0;
+  }
+  goCEFOnContextMenu(wrapper->owner->go_handle, menu);
   return 1;
 }
 
@@ -408,6 +594,7 @@ static void CEF_CALLBACK fynecef_on_paint(cef_render_handler_t* self,
   if (type != PET_VIEW || buffer == NULL || width <= 0 || height <= 0) {
     return;
   }
+
   goCEFOnFrame(wrapper->owner->go_handle, (void*)buffer, width, height,
                width * 4);
 }
@@ -504,6 +691,48 @@ fynecef_on_before_resource_load(cef_resource_request_handler_t* self,
   return RV_CONTINUE;
 }
 
+static int fynecef_string_equals_literal(const cef_string_t* value,
+                                         const char* literal) {
+  cef_string_utf8_t utf8 = {};
+  int match = 0;
+
+  if (value == NULL || literal == NULL || value->str == NULL ||
+      value->length == 0) {
+    return 0;
+  }
+
+  if (cef_string_utf16_to_utf8(value->str, value->length, &utf8) &&
+      utf8.str != NULL && strcmp(utf8.str, literal) == 0) {
+    match = 1;
+  }
+
+  cef_string_utf8_clear(&utf8);
+  return match;
+}
+
+static int fynecef_redirect_popup_to_current_tab(cef_browser_t* browser,
+                                                 const cef_string_t* target_url) {
+  cef_frame_t* frame;
+
+  if (browser == NULL || target_url == NULL || target_url->str == NULL ||
+      target_url->length == 0) {
+    return 0;
+  }
+
+  if (fynecef_string_equals_literal(target_url, "about:blank")) {
+    return 0;
+  }
+
+  frame = browser->get_main_frame != NULL ? browser->get_main_frame(browser)
+                                          : NULL;
+  if (frame == NULL || frame->load_url == NULL) {
+    return 0;
+  }
+
+  frame->load_url(frame, target_url);
+  return 1;
+}
+
 static int CEF_CALLBACK fynecef_on_before_popup(
     cef_life_span_handler_t* self,
     cef_browser_t* browser,
@@ -519,6 +748,30 @@ static int CEF_CALLBACK fynecef_on_before_popup(
     cef_browser_settings_t* settings,
     cef_dictionary_value_t** extra_info,
     int* no_javascript_access) {
+  switch (target_disposition) {
+    case CEF_WOD_NEW_FOREGROUND_TAB:
+    case CEF_WOD_NEW_BACKGROUND_TAB:
+    case CEF_WOD_NEW_POPUP:
+    case CEF_WOD_NEW_WINDOW:
+    case CEF_WOD_OFF_THE_RECORD:
+    case CEF_WOD_SWITCH_TO_TAB:
+      if (fynecef_redirect_popup_to_current_tab(browser, target_url)) {
+        return 1;
+      }
+      break;
+    case CEF_WOD_SAVE_TO_DISK:
+    case CEF_WOD_NEW_PICTURE_IN_PICTURE:
+    case CEF_WOD_IGNORE_ACTION:
+      break;
+    case CEF_WOD_UNKNOWN:
+    case CEF_WOD_CURRENT_TAB:
+    case CEF_WOD_SINGLETON_TAB:
+    case CEF_WOD_NUM_VALUES:
+      if (fynecef_redirect_popup_to_current_tab(browser, target_url)) {
+        return 1;
+      }
+      break;
+  }
   return 1;
 }
 
@@ -541,10 +794,22 @@ static void fynecef_init_client(struct fynecef_browser_s* owner) {
       fynecef_client_release, fynecef_client_has_one_ref,
       fynecef_client_has_at_least_one_ref);
   owner->client.cef.get_display_handler = fynecef_client_get_display_handler;
+  owner->client.cef.get_context_menu_handler =
+      fynecef_client_get_context_menu_handler;
   owner->client.cef.get_load_handler = fynecef_client_get_load_handler;
   owner->client.cef.get_render_handler = fynecef_client_get_render_handler;
   owner->client.cef.get_request_handler = fynecef_client_get_request_handler;
   owner->client.cef.get_life_span_handler = fynecef_client_get_life_span_handler;
+}
+
+static void fynecef_init_context_handler(struct fynecef_browser_s* owner) {
+  owner->context.owner = owner;
+  fynecef_init_handler_base(
+      &owner->context.cef.base, sizeof(cef_context_menu_handler_t),
+      fynecef_context_add_ref, fynecef_context_release,
+      fynecef_context_has_one_ref, fynecef_context_has_at_least_one_ref);
+  owner->context.cef.on_before_context_menu = fynecef_on_before_context_menu;
+  owner->context.cef.run_context_menu = fynecef_run_context_menu;
 }
 
 static void fynecef_init_display_handler(struct fynecef_browser_s* owner) {
@@ -709,6 +974,7 @@ fynecef_browser_t* fynecef_browser_create(uintptr_t go_handle,
   owner->height = height > 0 ? height : 1;
 
   fynecef_init_client(owner);
+  fynecef_init_context_handler(owner);
   fynecef_init_display_handler(owner);
   fynecef_init_load_handler(owner);
   fynecef_init_render_handler(owner);
@@ -955,4 +1221,27 @@ void fynecef_browser_close(fynecef_browser_t* browser) {
   if (host != NULL && host->close_browser != NULL) {
     host->close_browser(host, 1);
   }
+}
+
+void fynecef_context_menu_continue(fynecef_context_menu_t* menu,
+                                   int command_id,
+                                   uint32_t event_flags) {
+  if (menu == NULL) {
+    return;
+  }
+  if (menu->callback != NULL && menu->callback->cont != NULL) {
+    menu->callback->cont(menu->callback, command_id,
+                         (cef_event_flags_t)event_flags);
+  }
+  fynecef_destroy_context_menu(menu);
+}
+
+void fynecef_context_menu_cancel(fynecef_context_menu_t* menu) {
+  if (menu == NULL) {
+    return;
+  }
+  if (menu->callback != NULL && menu->callback->cancel != NULL) {
+    menu->callback->cancel(menu->callback);
+  }
+  fynecef_destroy_context_menu(menu);
 }

@@ -36,11 +36,11 @@ func (unsupportedBackend) DragMove(int, int, desktop.MouseButton, desktop.Modifi
 	return ErrPlatformUnsupported
 }
 
-func (unsupportedBackend) MouseDown(int, int, desktop.MouseButton, desktop.Modifier) error {
+func (unsupportedBackend) MouseDown(int, int, desktop.MouseButton, desktop.Modifier, int) error {
 	return ErrPlatformUnsupported
 }
 
-func (unsupportedBackend) MouseUp(int, int, desktop.MouseButton, desktop.Modifier) error {
+func (unsupportedBackend) MouseUp(int, int, desktop.MouseButton, desktop.Modifier, int) error {
 	return ErrPlatformUnsupported
 }
 

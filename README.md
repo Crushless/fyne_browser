@@ -1,7 +1,9 @@
-# fynecef
-
+[![GitHub go.mod Go version of a Go module](https://img.shields.io/github/go-mod/go-version/crushless/fyne_browser.svg)](https://github.com/crushless/fyne_browser)
 [![Go](https://github.com/Crushless/fyne_browser/actions/workflows/go.yml/badge.svg?branch=main)](https://github.com/Crushless/fyne_browser/actions/workflows/go.yml)
-[![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
+[![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)  
+![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat&logo=linux&logoColor=black)
+
+# fynecef
 
 `fynecef` is a Fyne v2 browser addon that embeds the Chromium Embedded Framework (CEF) inside a Fyne widget.
 
@@ -232,6 +234,17 @@ go run ./cmd/demo
 - [download.go](download.go): framework discovery, download, and extraction logic
 - [cmd/demo/main.go](cmd/demo/main.go): demo browser application
 - [cmd/cefbootstrap/main.go](cmd/cefbootstrap/main.go): optional bootstrap CLI
+
+## Development Roadmap
+
+| Feature | Likeliness | Comment | Issue |
+|:--|:-:|:--|:-:|
+| Windows support | 🟢🟢 | planned before v1.0 |  |
+| macOS support | 🟢🟢 | planned  before v1.0 |  |
+| Performance improvements | 🟢 | planned, investigating partial updates |  |
+| More performance improvements | 🟡 | maybe possible by shared pixmap between `fyne` and `CEF`  | - |
+| Mobile support | 🟠 | maybe by using the platform native html renderer | - |
+| Web support | 🔴 | unlikely, because of platform restrictions | - |
 
 ## Licensing
 

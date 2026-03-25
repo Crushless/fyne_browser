@@ -54,11 +54,11 @@ func (s *stubBackend) DragMove(int, int, desktop.MouseButton, desktop.Modifier) 
 	return ErrCEFNotBuilt
 }
 
-func (s *stubBackend) MouseDown(int, int, desktop.MouseButton, desktop.Modifier) error {
+func (s *stubBackend) MouseDown(int, int, desktop.MouseButton, desktop.Modifier, int) error {
 	return ErrCEFNotBuilt
 }
 
-func (s *stubBackend) MouseUp(int, int, desktop.MouseButton, desktop.Modifier) error {
+func (s *stubBackend) MouseUp(int, int, desktop.MouseButton, desktop.Modifier, int) error {
 	return ErrCEFNotBuilt
 }
 

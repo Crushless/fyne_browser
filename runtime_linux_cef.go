@@ -27,25 +27,35 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/driver"
 	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/fyne/v2/widget"
 )
 
 const (
-	cefCursorPointer                    = 0
-	cefCursorCross                      = 1
-	cefCursorHand                       = 2
-	cefCursorIBeam                      = 3
-	cefCursorEastResize                 = 6
-	cefCursorNorthResize                = 7
-	cefCursorSouthResize                = 10
-	cefCursorWestResize                 = 13
-	cefCursorNorthSouthResize           = 14
-	cefCursorEastWestResize             = 15
-	cefCursorColumnResize               = 18
-	cefCursorRowResize                  = 19
-	cefCursorVerticalText               = 30
-	cefCursorCell                       = 31
-	cefCursorNone                       = 37
-	cefCursorCustom                     = 45
+	cefCursorPointer          = 0
+	cefCursorCross            = 1
+	cefCursorHand             = 2
+	cefCursorIBeam            = 3
+	cefCursorEastResize       = 6
+	cefCursorNorthResize      = 7
+	cefCursorSouthResize      = 10
+	cefCursorWestResize       = 13
+	cefCursorNorthSouthResize = 14
+	cefCursorEastWestResize   = 15
+	cefCursorColumnResize     = 18
+	cefCursorRowResize        = 19
+	cefCursorVerticalText     = 30
+	cefCursorCell             = 31
+	cefCursorNone             = 37
+	cefCursorCustom           = 45
+	cefMenuItemTypeNone       = 0
+	cefMenuItemTypeCommand    = 1
+	cefMenuItemTypeCheck      = 2
+	cefMenuItemTypeRadio      = 3
+	cefMenuItemTypeSeparator  = 4
+	cefMenuItemTypeSubmenu    = 5
+	cefMenuIDFind             = 130
+	cefMenuIDPrint            = 131
+	cefMenuIDViewSource       = 132
 )
 
 const frameworkRootEnv = "FYNECEF_FRAMEWORK_ROOT"
@@ -82,15 +92,22 @@ type linuxBrowserBackend struct {
 
 	callbackID uintptr
 
-	mu         sync.Mutex
-	native     *C.fynecef_browser_t
-	parent     uintptr
-	x          int
-	y          int
-	width      int
-	height     int
-	pendingURL string
-	closed     bool
+	mu          sync.Mutex
+	native      *C.fynecef_browser_t
+	parent      uintptr
+	x           int
+	y           int
+	width       int
+	height      int
+	pendingURL  string
+	closed      bool
+	contextMenu *contextMenuSession
+}
+
+type contextMenuSession struct {
+	native *C.fynecef_context_menu_t
+	popup  *widget.PopUpMenu
+	done   atomic.Bool
 }
 
 type browserSnapshot struct {
@@ -346,7 +363,15 @@ func (b *linuxBrowserBackend) Close() error {
 	}
 	b.closed = true
 	native := b.native
+	contextMenu := b.contextMenu
+	b.contextMenu = nil
 	b.mu.Unlock()
+
+	if contextMenu != nil {
+		dispatchToFyne(func() {
+			b.cancelAndHideContextMenu(contextMenu)
+		})
+	}
 
 	if native == nil {
 		browserByID.Delete(b.callbackID)
@@ -372,15 +397,15 @@ func (b *linuxBrowserBackend) DragMove(x, y int, buttons desktop.MouseButton, mo
 	})
 }
 
-func (b *linuxBrowserBackend) MouseDown(x, y int, button desktop.MouseButton, modifiers desktop.Modifier) error {
+func (b *linuxBrowserBackend) MouseDown(x, y int, button desktop.MouseButton, modifiers desktop.Modifier, clickCount int) error {
 	return b.withNative(func(native *C.fynecef_browser_t) {
-		C.fynecef_browser_mouse_click(native, C.int(x), C.int(y), cefModifiers(modifiers), cefMouseButton(button), 0, 1)
+		C.fynecef_browser_mouse_click(native, C.int(x), C.int(y), cefModifiers(modifiers), cefMouseButton(button), 0, C.int(clickCount))
 	})
 }
 
-func (b *linuxBrowserBackend) MouseUp(x, y int, button desktop.MouseButton, modifiers desktop.Modifier) error {
+func (b *linuxBrowserBackend) MouseUp(x, y int, button desktop.MouseButton, modifiers desktop.Modifier, clickCount int) error {
 	return b.withNative(func(native *C.fynecef_browser_t) {
-		C.fynecef_browser_mouse_click(native, C.int(x), C.int(y), cefModifiers(modifiers), cefMouseButton(button), 1, 1)
+		C.fynecef_browser_mouse_click(native, C.int(x), C.int(y), cefModifiers(modifiers), cefMouseButton(button), 1, C.int(clickCount))
 	})
 }
 
@@ -898,23 +923,23 @@ func cefCommandLineArgs(base []string, executable string, layout linuxRuntimeLay
 	args = ensureSwitch(args, "--browser-subprocess-path="+executable)
 	args = ensureSwitch(args, "--resources-dir-path="+layout.resourcesDir)
 	args = ensureSwitch(args, "--locales-dir-path="+layout.localesDir)
-	args = ensureSwitch(args, "--disable-background-networking")
+	//args = ensureSwitch(args, "--disable-background-networking")
 	args = ensureSwitch(args, "--disable-component-update")
 	args = ensureSwitch(args, "--disable-default-apps")
-	args = ensureSwitch(args, "--disable-domain-reliability")
-	args = ensureSwitch(args, "--no-sandbox")
+	//args = ensureSwitch(args, "--disable-domain-reliability")
+	//args = ensureSwitch(args, "--no-sandbox")
 	args = ensureSwitch(args, "--no-default-browser-check")
 	args = ensureSwitch(args, "--no-zygote")
-	args = ensureSwitch(args, "--disable-gpu")
-	args = ensureSwitch(args, "--disable-gpu-compositing")
-	args = ensureSwitch(args, "--disable-gpu-sandbox")
-	args = ensureSwitch(args, "--disable-gpu-vsync")
-	args = ensureSwitch(args, "--disable-gpu-shader-disk-cache")
-	args = ensureSwitch(args, "--disable-gpu-watchdog")
-	args = ensureSwitch(args, "--disable-sync")
+	//args = ensureSwitch(args, "--disable-gpu")
+	//args = ensureSwitch(args, "--disable-gpu-compositing")
+	//args = ensureSwitch(args, "--disable-gpu-sandbox")
+	//args = ensureSwitch(args, "--disable-gpu-vsync")
+	//args = ensureSwitch(args, "--disable-gpu-shader-disk-cache")
+	//args = ensureSwitch(args, "--disable-gpu-watchdog")
+	//args = ensureSwitch(args, "--disable-sync")
 	args = ensureSwitch(args, "--in-process-gpu")
 	args = ensureSwitch(args, "--metrics-recording-only")
-	args = ensureSwitch(args, "--disable-features=UseSkiaRenderer,Vulkan,VaapiVideoDecoder,VaapiVideoEncoder,MediaRouter,AutofillServerCommunication,CertificateTransparencyComponentUpdater,OptimizationGuideModelDownloading,BackgroundFetch,NotificationTriggers")
+	//args = ensureSwitch(args, "--disable-features=UseSkiaRenderer,Vulkan,VaapiVideoDecoder,VaapiVideoEncoder,MediaRouter,AutofillServerCommunication,CertificateTransparencyComponentUpdater,OptimizationGuideModelDownloading,BackgroundFetch,NotificationTriggers")
 	return args
 }
 
@@ -1038,8 +1063,12 @@ func cefKeyCode(name string) (int, bool) {
 }
 
 func bgraToNRGBA(data []byte, width, height, stride int) {
-	rowWidth := width * 4
-	for y := 0; y < height; y++ {
+	for i := 0; i < len(data)-3; i += 4 {
+		data[i], data[i+2] = data[i+2], data[i]
+		//data[i+3] = 0xFF
+	}
+	/*rowWidth := width * 4
+	for y := range height {
 		row := y * stride
 		limit := row + rowWidth
 		if limit > len(data) {
@@ -1049,7 +1078,7 @@ func bgraToNRGBA(data []byte, width, height, stride int) {
 			data[i], data[i+2] = data[i+2], data[i]
 			data[i+3] = 0xFF
 		}
-	}
+	}*/
 }
 
 func dispatchToFyne(fn func()) {
@@ -1141,6 +1170,215 @@ func mapCEFCursor(cursorType int) desktop.StandardCursor {
 	}
 }
 
+func (b *linuxBrowserBackend) replaceContextMenu(session *contextMenuSession) *contextMenuSession {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	previous := b.contextMenu
+	b.contextMenu = session
+	return previous
+}
+
+func (b *linuxBrowserBackend) clearContextMenu(session *contextMenuSession) {
+	b.mu.Lock()
+	if b.contextMenu == session {
+		b.contextMenu = nil
+	}
+	b.mu.Unlock()
+}
+
+func (b *linuxBrowserBackend) finishContextMenu(session *contextMenuSession, selected bool, commandID int) {
+	if session == nil || !session.done.CompareAndSwap(false, true) {
+		return
+	}
+	b.clearContextMenu(session)
+	if selected {
+		_ = b.runtime.thread.run(func() error {
+			C.fynecef_context_menu_continue(session.native, C.int(commandID), 0)
+			return nil
+		})
+		return
+	}
+	_ = b.runtime.thread.run(func() error {
+		C.fynecef_context_menu_cancel(session.native)
+		return nil
+	})
+}
+
+func (b *linuxBrowserBackend) cancelAndHideContextMenu(session *contextMenuSession) {
+	if session == nil {
+		return
+	}
+	if session.popup != nil {
+		session.popup.Hide()
+	}
+	b.finishContextMenu(session, false, 0)
+}
+
+func normalizeContextMenuLabel(label string) string {
+	label = strings.ReplaceAll(label, "&", "")
+	label = strings.ReplaceAll(label, "…", "...")
+	label = strings.ToLower(strings.TrimSpace(label))
+	return strings.Join(strings.Fields(label), " ")
+}
+
+func isUnsupportedContextMenuItem(commandID int, label string) bool {
+	switch commandID {
+	case cefMenuIDFind, cefMenuIDPrint, cefMenuIDViewSource:
+		return true
+	}
+
+	normalized := normalizeContextMenuLabel(label)
+	if normalized == "" {
+		return false
+	}
+
+	unsupportedPhrases := []string{
+		"open link in new tab",
+		"open link in new window",
+		"open link in incognito",
+		"open image in new tab",
+		"open image in new window",
+		"open video in new tab",
+		"open video in new window",
+		"open audio in new tab",
+		"open audio in new window",
+		"open frame in new tab",
+		"open frame in new window",
+		"save link as",
+		"save image as",
+		"save video as",
+		"save audio as",
+		"save page as",
+		"view page source",
+		"view frame source",
+		"inspect",
+		"inspect element",
+		"developer tools",
+		"devtools",
+	}
+	for _, phrase := range unsupportedPhrases {
+		if strings.Contains(normalized, phrase) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func buildContextMenuItems(b *linuxBrowserBackend, session *contextMenuSession, items *C.fynecef_menu_item_t, count int) []*fyne.MenuItem {
+	if items == nil || count <= 0 {
+		return nil
+	}
+
+	source := unsafe.Slice(items, count)
+	menuItems := make([]*fyne.MenuItem, 0, count)
+	for _, item := range source {
+		itemType := int(item._type)
+		switch itemType {
+		case cefMenuItemTypeSeparator:
+			menuItems = append(menuItems, fyne.NewMenuItemSeparator())
+		case cefMenuItemTypeCommand, cefMenuItemTypeCheck, cefMenuItemTypeRadio, cefMenuItemTypeSubmenu:
+			label := ""
+			if item.label != nil {
+				// Fyne does not support mnemonics, so remove the '&' used by CEF to indicate them
+				label = strings.ReplaceAll(C.GoString(item.label), "&", "")
+			}
+			commandID := int(item.command_id)
+			if isUnsupportedContextMenuItem(commandID, label) {
+				continue
+			}
+			menuItem := fyne.NewMenuItem(label, nil)
+			menuItem.Disabled = item.enabled == 0
+			menuItem.Checked = item.checked != 0
+			if item.child_count > 0 && item.children != nil {
+				children := buildContextMenuItems(b, session, item.children, int(item.child_count))
+				if len(children) == 0 {
+					continue
+				}
+				menuItem.ChildMenu = fyne.NewMenu("", children...)
+			} else if itemType != cefMenuItemTypeSubmenu {
+				menuItem.Action = func(commandID int) func() {
+					return func() {
+						b.finishContextMenu(session, true, commandID)
+					}
+				}(commandID)
+			}
+			menuItems = append(menuItems, menuItem)
+		}
+	}
+
+	filtered := make([]*fyne.MenuItem, 0, len(menuItems))
+	lastWasSeparator := true
+	for _, item := range menuItems {
+		if item.IsSeparator {
+			if lastWasSeparator {
+				continue
+			}
+			lastWasSeparator = true
+			filtered = append(filtered, item)
+			continue
+		}
+		lastWasSeparator = false
+		filtered = append(filtered, item)
+	}
+	if n := len(filtered); n > 0 && filtered[n-1].IsSeparator {
+		filtered = filtered[:n-1]
+	}
+	return filtered
+}
+
+func (b *linuxBrowserBackend) showContextMenu(menu *C.fynecef_context_menu_t) {
+	if menu == nil {
+		return
+	}
+
+	app := fyne.CurrentApp()
+	if app == nil || app.Driver() == nil {
+		_ = b.runtime.thread.run(func() error {
+			C.fynecef_context_menu_cancel(menu)
+			return nil
+		})
+		return
+	}
+
+	canvas := app.Driver().CanvasForObject(b.browser)
+	if canvas == nil {
+		_ = b.runtime.thread.run(func() error {
+			C.fynecef_context_menu_cancel(menu)
+			return nil
+		})
+		return
+	}
+
+	session := &contextMenuSession{native: menu}
+	items := buildContextMenuItems(b, session, menu.items, int(menu.item_count))
+	if len(items) == 0 {
+		b.finishContextMenu(session, false, 0)
+		return
+	}
+
+	popup := widget.NewPopUpMenu(fyne.NewMenu("", items...), canvas)
+	session.popup = popup
+
+	previous := b.replaceContextMenu(session)
+	if previous != nil {
+		b.cancelAndHideContextMenu(previous)
+	}
+
+	hide := popup.OnDismiss
+	popup.OnDismiss = func() {
+		if hide != nil {
+			hide()
+		}
+		time.AfterFunc(10*time.Millisecond, func() {
+			b.finishContextMenu(session, false, 0)
+		})
+	}
+
+	base := app.Driver().AbsolutePositionForObject(b.browser)
+	popup.ShowAtPosition(base.Add(fyne.NewPos(float32(menu.x), float32(menu.y))))
+}
+
 //export goCEFOnAddressChange
 func goCEFOnAddressChange(handle C.uintptr_t, url *C.char) {
 	backend := lookupBackend(uintptr(handle))
@@ -1193,6 +1431,20 @@ func goCEFOnCursorChange(handle C.uintptr_t, cursorType C.int) {
 	cursor := mapCEFCursor(int(cursorType))
 	dispatchToFyne(func() {
 		backend.browser.setCursor(cursor)
+	})
+}
+
+//export goCEFOnContextMenu
+func goCEFOnContextMenu(handle C.uintptr_t, menu *C.fynecef_context_menu_t) {
+	backend := lookupBackend(uintptr(handle))
+	if backend == nil || menu == nil {
+		if menu != nil {
+			C.fynecef_context_menu_cancel(menu)
+		}
+		return
+	}
+	dispatchToFyne(func() {
+		backend.showContextMenu(menu)
 	})
 }
 
@@ -1274,7 +1526,16 @@ func goCEFOnFrame(handle C.uintptr_t, buffer unsafe.Pointer, width C.int, height
 		return
 	}
 	size := int(height) * int(stride)
+
 	raw := C.GoBytes(buffer, C.int(size))
-	bgraToNRGBA(raw, int(width), int(height), int(stride))
+
+	// CEF provides BGRA data, but Fyne expects RGBA. Swap the red and blue channels in-place.
+	if len(raw)%4 != 0 { // Help compiler to optimize loop by ensuring we have complete pixels
+		return
+	}
+	for i := 0; i < len(raw)-3; i += 4 {
+		raw[i], raw[i+2] = raw[i+2], raw[i]
+	}
+
 	backend.browser.queueFrame(int(width), int(height), int(stride), raw)
 }

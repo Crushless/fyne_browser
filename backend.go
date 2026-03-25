@@ -16,8 +16,8 @@ type browserBackend interface {
 
 	MouseMove(x, y int, modifiers desktop.Modifier) error
 	DragMove(x, y int, buttons desktop.MouseButton, modifiers desktop.Modifier) error
-	MouseDown(x, y int, button desktop.MouseButton, modifiers desktop.Modifier) error
-	MouseUp(x, y int, button desktop.MouseButton, modifiers desktop.Modifier) error
+	MouseDown(x, y int, button desktop.MouseButton, modifiers desktop.Modifier, clickCount int) error
+	MouseUp(x, y int, button desktop.MouseButton, modifiers desktop.Modifier, clickCount int) error
 	MouseWheel(x, y int, deltaX, deltaY int, modifiers desktop.Modifier) error
 
 	KeyDown(name string, modifiers desktop.Modifier) error
