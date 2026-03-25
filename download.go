@@ -420,37 +420,55 @@ func inspectFramework(root string) (*Framework, bool) {
 	if err != nil {
 		return nil, false
 	}
-	required := []string{
+	for _, path := range []string{
 		filepath.Join(root, "include"),
 		filepath.Join(root, "Release"),
-	}
-	if runtime.GOOS == "darwin" {
-		required = append(required, filepath.Join(root, "Release", "Chromium Embedded Framework.framework", "Resources"))
-	} else {
-		required = append(required, filepath.Join(root, "Resources"))
-	}
-	for _, path := range required {
+	} {
 		info, err := os.Stat(path)
 		if err != nil || !info.IsDir() {
 			return nil, false
 		}
 	}
 
-	libName := "libcef.so"
-	switch runtime.GOOS {
-	case "windows":
-		libName = "libcef.dll"
-	case "darwin":
-		libName = "Chromium Embedded Framework.framework"
-	}
-	if _, err := os.Stat(filepath.Join(root, "Release", libName)); err != nil && runtime.GOOS != "darwin" {
+	platform := inferFrameworkPlatform(root)
+	switch {
+	case hasFrameworkLayout(root, "libcef.so", filepath.Join("Resources")):
+		if platform == "" {
+			platform = "linux64"
+		}
+	case hasFrameworkLayout(root, "libcef.dll", filepath.Join("Resources")):
+		if platform == "" {
+			platform = "windows64"
+		}
+	case hasMacFrameworkLayout(root):
+		if platform == "" {
+			platform = "macosx64"
+		}
+	default:
 		return nil, false
 	}
 
 	return &Framework{
 		Root:     root,
-		Platform: inferFrameworkPlatform(root),
+		Platform: platform,
 	}, true
+}
+
+func hasFrameworkLayout(root, releaseLib string, resourcesPath string) bool {
+	if _, err := os.Stat(filepath.Join(root, "Release", releaseLib)); err != nil {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(root, resourcesPath))
+	return err == nil && info.IsDir()
+}
+
+func hasMacFrameworkLayout(root string) bool {
+	frameworkDir := filepath.Join(root, "Release", "Chromium Embedded Framework.framework")
+	if info, err := os.Stat(frameworkDir); err != nil || !info.IsDir() {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(frameworkDir, "Resources"))
+	return err == nil && info.IsDir()
 }
 
 func inferFrameworkPlatform(root string) string {
