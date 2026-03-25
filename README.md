@@ -241,8 +241,7 @@ go run ./cmd/demo
 |:--|:-:|:--|:-:|
 | Windows support | 🟢🟢 | planned before v1.0 |  |
 | macOS support | 🟢🟢 | planned  before v1.0 |  |
-| Performance improvements | 🟢 | planned, investigating partial updates |  |
-| More performance improvements | 🟡 | maybe possible by shared pixmap between `fyne` and `CEF`  | - |
+| Performance improvements | 🟡 | maybe possible by shared pixmap between `fyne` and `CEF`  | - |
 | Mobile support | 🟠 | maybe by using the platform native html renderer | - |
 | Web support | 🔴 | unlikely, because of platform restrictions | - |
 
