@@ -596,7 +596,7 @@ static void CEF_CALLBACK fynecef_on_paint(cef_render_handler_t* self,
   }
 
   goCEFOnFrame(wrapper->owner->go_handle, (void*)buffer, width, height,
-               width * 4);
+               width * 4, dirtyRectsCount, (cef_rect_t*)dirtyRects);
 }
 
 static void CEF_CALLBACK fynecef_on_accelerated_paint(
@@ -1220,6 +1220,37 @@ void fynecef_browser_close(fynecef_browser_t* browser) {
   cef_browser_host_t* host = browser->browser->get_host(browser->browser);
   if (host != NULL && host->close_browser != NULL) {
     host->close_browser(host, 1);
+  }
+}
+
+void fynecef_copy_bgra_rect_to_rgba(uint8_t* dst,
+                                    int dst_stride,
+                                    const uint8_t* src,
+                                    int src_stride,
+                                    int x,
+                                    int y,
+                                    int width,
+                                    int height) {
+  int row;
+
+  if (dst == NULL || src == NULL || dst_stride < width * 4 ||
+      src_stride < (x + width) * 4 || x < 0 || y < 0 || width <= 0 ||
+      height <= 0) {
+    return;
+  }
+
+  src += (size_t)y * (size_t)src_stride + (size_t)x * 4u;
+  for (row = 0; row < height; row++) {
+    const uint8_t* src_row = src + (size_t)row * (size_t)src_stride;
+    uint8_t* dst_row = dst + (size_t)row * (size_t)dst_stride;
+    int i;
+
+    for (i = 0; i < width * 4; i += 4) {
+      dst_row[i] = src_row[i + 2];
+      dst_row[i + 1] = src_row[i + 1];
+      dst_row[i + 2] = src_row[i];
+      dst_row[i + 3] = src_row[i + 3];
+    }
   }
 }
 

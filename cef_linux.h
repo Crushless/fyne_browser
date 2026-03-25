@@ -94,6 +94,14 @@ void fynecef_browser_key_event(fynecef_browser_t* browser,
                                uint16_t character,
                                uint16_t unmodified_character);
 void fynecef_browser_close(fynecef_browser_t* browser);
+void fynecef_copy_bgra_rect_to_rgba(uint8_t* dst,
+                                    int dst_stride,
+                                    const uint8_t* src,
+                                    int src_stride,
+                                    int x,
+                                    int y,
+                                    int width,
+                                    int height);
 void fynecef_context_menu_continue(fynecef_context_menu_t* menu,
                                    int command_id,
                                    uint32_t event_flags);
@@ -122,7 +130,9 @@ extern void goCEFOnFrame(uintptr_t handle,
                          void* buffer,
                          int width,
                          int height,
-                         int stride);
+                         int stride,
+                         size_t dirty_rect_count,
+                         cef_rect_t* dirty_rects);
 extern void goCEFOnBeforeClose(uintptr_t handle);
 
 #endif

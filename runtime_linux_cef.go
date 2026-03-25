@@ -1062,25 +1062,6 @@ func cefKeyCode(name string) (int, bool) {
 	return 0, false
 }
 
-func bgraToNRGBA(data []byte, width, height, stride int) {
-	for i := 0; i < len(data)-3; i += 4 {
-		data[i], data[i+2] = data[i+2], data[i]
-		//data[i+3] = 0xFF
-	}
-	/*rowWidth := width * 4
-	for y := range height {
-		row := y * stride
-		limit := row + rowWidth
-		if limit > len(data) {
-			break
-		}
-		for i := row; i+3 < limit; i += 4 {
-			data[i], data[i+2] = data[i+2], data[i]
-			data[i+3] = 0xFF
-		}
-	}*/
-}
-
 func dispatchToFyne(fn func()) {
 	if fyne.CurrentApp() == nil {
 		fn()
@@ -1520,22 +1501,110 @@ func goCEFOnBeforeClose(handle C.uintptr_t) {
 }
 
 //export goCEFOnFrame
-func goCEFOnFrame(handle C.uintptr_t, buffer unsafe.Pointer, width C.int, height C.int, stride C.int) {
+func goCEFOnFrame(handle C.uintptr_t, buffer unsafe.Pointer, width C.int, height C.int, stride C.int, dirtyRectCount C.size_t, dirtyRects *C.cef_rect_t) {
 	backend := lookupBackend(uintptr(handle))
 	if backend == nil || buffer == nil || width <= 0 || height <= 0 || stride <= 0 {
 		return
 	}
-	size := int(height) * int(stride)
 
-	raw := C.GoBytes(buffer, C.int(size))
+	frameWidth := int(width)
+	frameHeight := int(height)
+	frameStride := int(stride)
 
-	// CEF provides BGRA data, but Fyne expects RGBA. Swap the red and blue channels in-place.
-	if len(raw)%4 != 0 { // Help compiler to optimize loop by ensuring we have complete pixels
+	copyFrameRect := func(x, y, rectWidth, rectHeight int) []byte {
+		copyStride := rectWidth * 4
+		size := rectHeight * copyStride
+		if size <= 0 || size%4 != 0 {
+			return nil
+		}
+		raw := make([]byte, size)
+		C.fynecef_copy_bgra_rect_to_rgba(
+			(*C.uint8_t)(unsafe.Pointer(&raw[0])),
+			C.int(copyStride),
+			(*C.uint8_t)(buffer),
+			stride,
+			C.int(x),
+			C.int(y),
+			C.int(rectWidth),
+			C.int(rectHeight),
+		)
+		return raw
+	}
+
+	fullFrame := func() {
+		raw := copyFrameRect(0, 0, frameWidth, frameHeight)
+		if raw == nil {
+			return
+		}
+		backend.browser.queueFrame(frameWidth, frameHeight, frameStride, raw)
+	}
+
+	if dirtyRectCount == 0 || dirtyRects == nil {
+		fullFrame()
 		return
 	}
-	for i := 0; i < len(raw)-3; i += 4 {
-		raw[i], raw[i+2] = raw[i+2], raw[i]
+
+	rects := unsafe.Slice(dirtyRects, int(dirtyRectCount))
+	clippedRects := make([]frameRect, 0, len(rects))
+	for _, rect := range rects {
+		rectX := int(rect.x)
+		rectY := int(rect.y)
+		rectWidth := int(rect.width)
+		rectHeight := int(rect.height)
+
+		if rectX < 0 {
+			rectWidth += rectX
+			rectX = 0
+		}
+		if rectY < 0 {
+			rectHeight += rectY
+			rectY = 0
+		}
+		if rectX >= frameWidth || rectY >= frameHeight {
+			continue
+		}
+		if rectX+rectWidth > frameWidth {
+			rectWidth = frameWidth - rectX
+		}
+		if rectY+rectHeight > frameHeight {
+			rectHeight = frameHeight - rectY
+		}
+		if rectWidth <= 0 || rectHeight <= 0 {
+			continue
+		}
+
+		if rectX == 0 && rectY == 0 && rectWidth == frameWidth && rectHeight == frameHeight {
+			fullFrame()
+			return
+		}
+
+		clippedRects = append(clippedRects, frameRect{
+			x:      rectX,
+			y:      rectY,
+			width:  rectWidth,
+			height: rectHeight,
+		})
 	}
 
-	backend.browser.queueFrame(int(width), int(height), int(stride), raw)
+	if len(clippedRects) == 0 {
+		fullFrame()
+		return
+	}
+	if !backend.browser.queueFrameRects(frameWidth, frameHeight, frameStride, clippedRects, func(dst []byte, dstStride int) {
+		for _, rect := range clippedRects {
+			dstStart := rect.y*dstStride + rect.x*4
+			C.fynecef_copy_bgra_rect_to_rgba(
+				(*C.uint8_t)(unsafe.Pointer(&dst[dstStart])),
+				C.int(dstStride),
+				(*C.uint8_t)(buffer),
+				stride,
+				C.int(rect.x),
+				C.int(rect.y),
+				C.int(rect.width),
+				C.int(rect.height),
+			)
+		}
+	}) {
+		fullFrame()
+	}
 }

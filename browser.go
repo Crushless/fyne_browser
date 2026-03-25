@@ -66,6 +66,13 @@ type framePayload struct {
 	pixels []byte
 }
 
+type frameRect struct {
+	x      int
+	y      int
+	width  int
+	height int
+}
+
 const boundsSyncInterval = 16 * time.Millisecond
 const defaultWindowlessFrameRate = 60
 const resizeWindowlessFrameRate = 20
@@ -359,6 +366,14 @@ func (b *Browser) setFrame(width, height, stride int, pixels []byte) {
 	canvas.Refresh(b.imageObject)
 }
 
+func framePayloadMatches(frame *framePayload, width, height, stride int) bool {
+	return frame != nil && frame.width == width && frame.height == height && frame.stride == stride && len(frame.pixels) >= height*stride
+}
+
+func frameImageMatches(img *image.NRGBA, width, height, stride int) bool {
+	return img != nil && img.Rect.Dx() == width && img.Rect.Dy() == height && img.Stride == stride && len(img.Pix) >= height*stride
+}
+
 func (b *Browser) queueFrame(width, height, stride int, pixels []byte) {
 	if width <= 0 || height <= 0 || stride < width*4 || len(pixels) < height*stride {
 		return
@@ -389,6 +404,49 @@ func (b *Browser) queueFrame(width, height, stride int, pixels []byte) {
 		return
 	}
 	fyne.Do(dispatch)
+}
+
+func (b *Browser) queueFrameRects(width, height, stride int, rects []frameRect, apply func([]byte, int)) bool {
+	if width <= 0 || height <= 0 || stride < width*4 || len(rects) == 0 || apply == nil {
+		return false
+	}
+
+	schedule := false
+
+	b.mu.Lock()
+	if !framePayloadMatches(b.pendingFrame, width, height, stride) {
+		if !frameImageMatches(b.frame, width, height, stride) {
+			b.mu.Unlock()
+			return false
+		}
+		base := make([]byte, len(b.frame.Pix))
+		copy(base, b.frame.Pix)
+		b.pendingFrame = &framePayload{
+			width:  width,
+			height: height,
+			stride: stride,
+			pixels: base,
+		}
+	}
+	apply(b.pendingFrame.pixels, stride)
+
+	if !b.frameDispatchQueued {
+		b.frameDispatchQueued = true
+		schedule = true
+	}
+	b.mu.Unlock()
+
+	if !schedule {
+		return true
+	}
+
+	dispatch := b.applyQueuedFrame
+	if fyne.CurrentApp() == nil {
+		dispatch()
+		return true
+	}
+	fyne.Do(dispatch)
+	return true
 }
 
 func (b *Browser) applyQueuedFrame() {
