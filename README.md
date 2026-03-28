@@ -49,6 +49,7 @@ Current status:
 Notes:
 
 - No custom build tag is required on supported platforms.
+- Importing the module no longer requires a repo-local CEF SDK at build time; the C headers are vendored and `libcef` is loaded from the discovered runtime at startup.
 - Subprocess handling is automatic once the package is imported.
 - If `cgo` is disabled, the package still builds, but the browser backend falls back to a clear unsupported message.
 
@@ -76,6 +77,7 @@ go run ./cmd/cefbootstrap
 ```
 
 This installs the latest matching framework under `third_party/cef/builds` and updates `third_party/cef/current`.
+That bootstrap step is optional for consumers of the published Go module and mainly useful for local development, CI prefetching, or deterministic packaging.
 
 To prefetch a specific target such as Intel macOS, pass `-platform` explicitly:
 

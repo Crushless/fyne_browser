@@ -3,8 +3,8 @@
 package fynecef
 
 /*
-#cgo CFLAGS: -I${SRCDIR}/third_party/cef/current
-#cgo LDFLAGS: -F${SRCDIR}/third_party/cef/current/Release -Wl,-rpath,${SRCDIR}/third_party/cef/current/Release -framework Chromium\ Embedded\ Framework -framework Cocoa
+#cgo CFLAGS: -I${SRCDIR}/cef_sdk
+#cgo LDFLAGS: -framework Cocoa
 #include <stdlib.h>
 #include "cef_darwin.h"
 */
@@ -146,7 +146,10 @@ func MaybeRunSubprocess() (bool, int) {
 	argv, freeFn := makeCStringSlice(cefCommandLineArgs(os.Args, subprocessPath, layout))
 	defer freeFn()
 
-	code := int(C.fynecef_execute_process(C.int(len(argv)), argvPointer(argv)))
+	cefLibraryC := C.CString(filepath.Join(layout.frameworkRoot, "Chromium Embedded Framework"))
+	defer C.free(unsafe.Pointer(cefLibraryC))
+
+	code := int(C.fynecef_execute_process(C.int(len(argv)), argvPointer(argv), cefLibraryC))
 	if code >= 0 {
 		return true, code
 	}
@@ -841,10 +844,12 @@ func startCEFThread(subprocessPath string, layout linuxRuntimeLayout, cachePath 
 		defer freeFn()
 
 		executableC := C.CString(subprocessPath)
+		cefLibraryC := C.CString(filepath.Join(layout.frameworkRoot, "Chromium Embedded Framework"))
 		frameworkC := C.CString(layout.frameworkRoot)
 		resourcesC := C.CString(layout.resourcesDir)
 		cacheC := C.CString(cachePath)
 		defer C.free(unsafe.Pointer(executableC))
+		defer C.free(unsafe.Pointer(cefLibraryC))
 		defer C.free(unsafe.Pointer(frameworkC))
 		defer C.free(unsafe.Pointer(resourcesC))
 		defer C.free(unsafe.Pointer(cacheC))
@@ -852,13 +857,14 @@ func startCEFThread(subprocessPath string, layout linuxRuntimeLayout, cachePath 
 		ok := C.fynecef_initialize(
 			C.int(len(argv)),
 			argvPointer(argv),
+			cefLibraryC,
 			executableC,
 			frameworkC,
 			resourcesC,
 			cacheC,
 		)
 		if ok == 0 {
-			ready <- errors.New("cef_initialize failed")
+			ready <- errors.New(C.GoString(C.fynecef_last_error()))
 			return
 		}
 

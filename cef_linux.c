@@ -1,6 +1,7 @@
 //go:build cgo && linux
 
 #include "cef_linux.h"
+#include "cef_dynamic.h"
 
 #include <X11/Xlib.h>
 #include <stdlib.h>
@@ -890,8 +891,11 @@ static int fynecef_configure_api_hash(void) {
   return 1;
 }
 
-int fynecef_execute_process(int argc, char** argv) {
+int fynecef_execute_process(int argc, char** argv, const char* cef_library_path) {
   cef_main_args_t args = {.argc = argc, .argv = argv};
+  if (!fynecef_cef_load_library(cef_library_path)) {
+    return -1;
+  }
   if (!fynecef_configure_api_hash()) {
     return -1;
   }
@@ -899,8 +903,13 @@ int fynecef_execute_process(int argc, char** argv) {
   return cef_execute_process(&args, NULL, NULL);
 }
 
+const char* fynecef_last_error(void) {
+  return fynecef_cef_last_error();
+}
+
 int fynecef_initialize(int argc,
                        char** argv,
+                       const char* cef_library_path,
                        const char* subprocess_path,
                        const char* resources_dir,
                        const char* locales_dir,
@@ -908,6 +917,9 @@ int fynecef_initialize(int argc,
   cef_main_args_t args = {.argc = argc, .argv = argv};
   cef_settings_t settings = {};
 
+  if (!fynecef_cef_load_library(cef_library_path)) {
+    return 0;
+  }
   if (!fynecef_configure_api_hash()) {
     return 0;
   }

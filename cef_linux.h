@@ -38,9 +38,11 @@ struct fynecef_context_menu_s {
   struct _cef_run_context_menu_callback_t* callback;
 };
 
-int fynecef_execute_process(int argc, char** argv);
+int fynecef_execute_process(int argc, char** argv, const char* cef_library_path);
+const char* fynecef_last_error(void);
 int fynecef_initialize(int argc,
                        char** argv,
+                       const char* cef_library_path,
                        const char* subprocess_path,
                        const char* resources_dir,
                        const char* locales_dir,
