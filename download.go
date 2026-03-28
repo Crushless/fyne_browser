@@ -113,6 +113,9 @@ func selectBuild(index manifest, manifestURL, platform string, channel BuildChan
 		if BuildChannel(version.Channel) != channel {
 			continue
 		}
+		if version.CEFVersion != SupportedCEFVersion {
+			continue
+		}
 		for _, file := range version.Files {
 			if PackageType(file.Type) != pkgType {
 				continue
@@ -135,10 +138,11 @@ func selectBuild(index manifest, manifestURL, platform string, channel BuildChan
 		}
 	}
 
-	return nil, fmt.Errorf("%w for platform=%s channel=%s type=%s", ErrNoBuild, platform, channel, pkgType)
+	return nil, fmt.Errorf("%w for platform=%s channel=%s type=%s cef_version=%s", ErrNoBuild, platform, channel, pkgType, SupportedCEFVersion)
 }
 
 func FindFramework(opts InstallOptions) (*Framework, error) {
+	incompatibleFound := false
 	paths := append([]string{}, opts.SearchPaths...)
 	if opts.Destination != "" {
 		paths = append(paths, opts.Destination)
@@ -148,6 +152,10 @@ func FindFramework(opts InstallOptions) (*Framework, error) {
 			continue
 		}
 		if framework, ok := inspectFramework(root); ok {
+			if !isCompatibleFrameworkVersion(framework.Version) {
+				incompatibleFound = true
+				continue
+			}
 			if opts.Platform != "" && framework.Platform != "" && framework.Platform != opts.Platform {
 				continue
 			}
@@ -162,12 +170,19 @@ func FindFramework(opts InstallOptions) (*Framework, error) {
 				continue
 			}
 			if framework, ok := inspectFramework(filepath.Join(root, entry.Name())); ok {
+				if !isCompatibleFrameworkVersion(framework.Version) {
+					incompatibleFound = true
+					continue
+				}
 				if opts.Platform != "" && framework.Platform != "" && framework.Platform != opts.Platform {
 					continue
 				}
 				return framework, nil
 			}
 		}
+	}
+	if incompatibleFound {
+		return nil, fmt.Errorf("%w: require CEF %s", ErrNoFramework, SupportedCEFVersion)
 	}
 	return nil, ErrNoFramework
 }
@@ -450,8 +465,31 @@ func inspectFramework(root string) (*Framework, bool) {
 
 	return &Framework{
 		Root:     root,
+		Version:  readFrameworkVersion(root),
 		Platform: platform,
 	}, true
+}
+
+func readFrameworkVersion(root string) string {
+	data, err := os.ReadFile(filepath.Join(root, "include", "cef_version.h"))
+	if err != nil {
+		return ""
+	}
+	const prefix = "#define CEF_VERSION \""
+	for _, line := range strings.Split(string(data), "\n") {
+		if !strings.HasPrefix(line, prefix) {
+			continue
+		}
+		version, _, ok := strings.Cut(strings.TrimPrefix(line, prefix), "\"")
+		if ok {
+			return version
+		}
+	}
+	return ""
+}
+
+func isCompatibleFrameworkVersion(version string) bool {
+	return version == SupportedCEFVersion
 }
 
 func hasFrameworkLayout(root, releaseLib string, resourcesPath string) bool {

@@ -137,6 +137,14 @@ const char* fynecef_cef_last_error(void) {
   return "unknown CEF loader error";
 }
 
+void fynecef_cef_set_error(const char* message) {
+  if (message == NULL || message[0] == '\0') {
+    fynecef_cef.error[0] = '\0';
+    return;
+  }
+  snprintf(fynecef_cef.error, sizeof(fynecef_cef.error), "%s", message);
+}
+
 const char* fynecef_cef_api_hash(int version, int entry) {
   if (!fynecef_cef.loaded) {
     fynecef_set_cef_error("CEF library is not loaded");

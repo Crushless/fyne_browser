@@ -7,6 +7,7 @@
 
 int fynecef_cef_load_library(const char* library_path);
 const char* fynecef_cef_last_error(void);
+void fynecef_cef_set_error(const char* message);
 
 const char* fynecef_cef_api_hash(int version, int entry);
 int fynecef_cef_execute_process(const cef_main_args_t* args,

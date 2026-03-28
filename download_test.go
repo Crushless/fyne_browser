@@ -50,6 +50,30 @@ func TestLatestBuildSelectsNewestMatchingEntry(t *testing.T) {
 	}
 }
 
+func TestLatestBuildSkipsIncompatibleCEFVersion(t *testing.T) {
+	var index manifest
+	if err := json.Unmarshal([]byte(`{
+		"linux64": {
+			"versions": [
+				{
+					"cef_version": "146.0.9+g3ca6a87+chromium-146.0.7680.165",
+					"channel": "stable",
+					"chromium_version": "146.0.7680.165",
+					"files": [
+						{"name":"cef_binary_linux64_minimal.tar.bz2","sha1":"cafebabe","size":2,"type":"minimal"}
+					]
+				}
+			]
+		}
+	}`), &index); err != nil {
+		t.Fatalf("unmarshal manifest: %v", err)
+	}
+
+	if _, err := selectBuild(index, "https://cef-builds.spotifycdn.com/index.json", "linux64", ChannelStable, PackageTypeMinimal); err == nil {
+		t.Fatal("selectBuild expected an error for incompatible CEF version")
+	}
+}
+
 func TestFindFramework(t *testing.T) {
 	root := t.TempDir()
 	frameworkRoot := filepath.Join(root, "cef")
@@ -65,6 +89,7 @@ func TestFindFramework(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(frameworkRoot, "Release", "libcef.so"), []byte("stub"), 0o644); err != nil {
 		t.Fatalf("write libcef.so: %v", err)
 	}
+	writeCEFVersionHeader(t, frameworkRoot, SupportedCEFVersion)
 
 	framework, err := FindFramework(InstallOptions{SearchPaths: []string{root}})
 	if err != nil {
@@ -101,6 +126,7 @@ func TestFindFrameworkHonorsRequestedPlatform(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(frameworkRoot, "Release", "libcef.so"), []byte("stub"), 0o644); err != nil {
 			t.Fatalf("write libcef.so for %s: %v", frameworkRoot, err)
 		}
+		writeCEFVersionHeader(t, frameworkRoot, SupportedCEFVersion)
 	}
 
 	framework, err := FindFramework(InstallOptions{
@@ -112,6 +138,39 @@ func TestFindFrameworkHonorsRequestedPlatform(t *testing.T) {
 	}
 	if framework.Platform != "macosx64" {
 		t.Fatalf("unexpected platform: got %s want macosx64", framework.Platform)
+	}
+}
+
+func TestFindFrameworkSkipsIncompatibleVersion(t *testing.T) {
+	root := t.TempDir()
+	incompatibleRoot := filepath.Join(root, "linux64-minimal-incompatible")
+	compatibleRoot := filepath.Join(root, "linux64-minimal-compatible")
+
+	for frameworkRoot, version := range map[string]string{
+		incompatibleRoot: "146.0.9+g3ca6a87+chromium-146.0.7680.165",
+		compatibleRoot:   SupportedCEFVersion,
+	} {
+		for _, dir := range []string{
+			filepath.Join(frameworkRoot, "include"),
+			filepath.Join(frameworkRoot, "Release"),
+			filepath.Join(frameworkRoot, "Resources"),
+		} {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatalf("mkdir %s: %v", dir, err)
+			}
+		}
+		if err := os.WriteFile(filepath.Join(frameworkRoot, "Release", "libcef.so"), []byte("stub"), 0o644); err != nil {
+			t.Fatalf("write libcef.so for %s: %v", frameworkRoot, err)
+		}
+		writeCEFVersionHeader(t, frameworkRoot, version)
+	}
+
+	framework, err := FindFramework(InstallOptions{SearchPaths: []string{root}})
+	if err != nil {
+		t.Fatalf("FindFramework returned error: %v", err)
+	}
+	if framework.Version != SupportedCEFVersion {
+		t.Fatalf("unexpected version: got %s want %s", framework.Version, SupportedCEFVersion)
 	}
 }
 
@@ -163,5 +222,13 @@ func TestPlatformName(t *testing.T) {
 		if got != test.want {
 			t.Fatalf("platformName(%q, %q) = %q, want %q", test.goos, test.goarch, got, test.want)
 		}
+	}
+}
+
+func writeCEFVersionHeader(t *testing.T, frameworkRoot, version string) {
+	t.Helper()
+	content := "#define CEF_VERSION \"" + version + "\"\n"
+	if err := os.WriteFile(filepath.Join(frameworkRoot, "include", "cef_version.h"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write cef_version.h for %s: %v", frameworkRoot, err)
 	}
 }

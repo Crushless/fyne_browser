@@ -50,6 +50,7 @@ Notes:
 
 - No custom build tag is required on supported platforms.
 - Importing the module no longer requires a repo-local CEF SDK at build time; the C headers are vendored and `libcef` is loaded from the discovered runtime at startup.
+- Automatic runtime downloads are pinned to the CEF version supported by the vendored SDK to avoid API mismatches.
 - Subprocess handling is automatic once the package is imported.
 - If `cgo` is disabled, the package still builds, but the browser backend falls back to a clear unsupported message.
 

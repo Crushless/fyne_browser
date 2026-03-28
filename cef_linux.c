@@ -886,6 +886,8 @@ static void fynecef_init_life_span_handler(struct fynecef_browser_s* owner) {
 static int fynecef_configure_api_hash(void) {
   const char* api_hash = cef_api_hash(CEF_API_VERSION, 0);
   if (api_hash == NULL || strcmp(api_hash, CEF_API_HASH_PLATFORM) != 0) {
+    fynecef_cef_set_error(
+        "CEF API mismatch: the discovered runtime does not match the vendored SDK; remove incompatible runtimes and let fynecef download the matching version");
     return 0;
   }
   return 1;
